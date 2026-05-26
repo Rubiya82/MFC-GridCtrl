@@ -68,8 +68,8 @@ protected:
 	CWnd  *m_pParentWnd;
 	CRect  m_rectTitle;
     CRect  m_rectHover;
-    DWORD  m_dwLastLButtonDown;
-    DWORD  m_dwDblClickMsecs;
+    ULONGLONG m_dwLastLButtonDown;
+    DWORD     m_dwDblClickMsecs;
     BOOL   m_bCreated;
 
 	// Generated message map functions

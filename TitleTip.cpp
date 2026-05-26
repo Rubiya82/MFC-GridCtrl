@@ -70,7 +70,7 @@ CTitleTip::CTitleTip()
 			AfxThrowResourceException();
 	}
 
-    m_dwLastLButtonDown = ULONG_MAX;
+    m_dwLastLButtonDown = MAXULONGLONG;
     m_dwDblClickMsecs   = GetDoubleClickTime();
     m_bCreated          = FALSE;
     m_pParentWnd        = NULL;
@@ -223,9 +223,10 @@ void CTitleTip::Show(CRect rectTitle, LPCTSTR lpszTitleText, int xoffset /*=0*/,
 void CTitleTip::Hide()
 {
   	if (!::IsWindow(GetSafeHwnd()))
-        return;
+		return;
 
-    if (GetCapture()->GetSafeHwnd() == GetSafeHwnd())
+	CWnd* pCaptureWnd = GetCapture();
+    if (pCaptureWnd && pCaptureWnd->GetSafeHwnd() == GetSafeHwnd())
         ReleaseCapture();
 
 	ShowWindow( SW_HIDE );
@@ -242,8 +243,10 @@ void CTitleTip::OnMouseMove(UINT nFlags, CPoint point)
         CWnd *pWnd = WindowFromPoint( point );
         if ( pWnd == this ) 
             pWnd = m_pParentWnd;
+        if (!pWnd)
+            return;
         
-        int hittest = (int)pWnd->SendMessage(WM_NCHITTEST,0,MAKELONG(point.x,point.y));
+        int hittest = static_cast<int>(pWnd->SendMessage(WM_NCHITTEST,0,MAKELONG(point.x,point.y)));
         
         if (hittest == HTCLIENT) {
             pWnd->ScreenToClient( &point );
@@ -257,7 +260,7 @@ void CTitleTip::OnMouseMove(UINT nFlags, CPoint point)
 BOOL CTitleTip::PreTranslateMessage(MSG* pMsg) 
 {
     // Used to qualify WM_LBUTTONDOWN messages as double-clicks
-    DWORD dwTick=0;
+    ULONGLONG dwTick=0;
     BOOL bDoubleClick=FALSE;
 
     CWnd *pWnd;
@@ -266,10 +269,11 @@ BOOL CTitleTip::PreTranslateMessage(MSG* pMsg)
 	{
 	case WM_LBUTTONDOWN:
        // Get tick count since last LButtonDown
-        dwTick = GetTickCount();
+        dwTick = GetTickCount64();
         bDoubleClick = ((dwTick - m_dwLastLButtonDown) <= m_dwDblClickMsecs);
         m_dwLastLButtonDown = dwTick;
         // NOTE: DO NOT ADD break; STATEMENT HERE! Let code fall through
+        [[fallthrough]];
 
 	case WM_RBUTTONDOWN:
 	case WM_MBUTTONDOWN:
@@ -288,8 +292,10 @@ BOOL CTitleTip::PreTranslateMessage(MSG* pMsg)
 
 		if( pWnd->GetSafeHwnd() == GetSafeHwnd()) 
 			pWnd = m_pParentWnd;
+		if (!pWnd)
+			return CWnd::PreTranslateMessage(pMsg);
 
-		hittest = (int)pWnd->SendMessage(WM_NCHITTEST,0,MAKELONG(point.x,point.y));
+		hittest = static_cast<int>(pWnd->SendMessage(WM_NCHITTEST,0,MAKELONG(point.x,point.y)));
 
 		if (hittest == HTCLIENT) 
 		{
@@ -325,7 +331,8 @@ BOOL CTitleTip::PreTranslateMessage(MSG* pMsg)
 	case WM_KEYDOWN:
 	case WM_SYSKEYDOWN:
         Hide();
-		m_pParentWnd->PostMessage( pMsg->message, pMsg->wParam, pMsg->lParam );
+		if (m_pParentWnd)
+			m_pParentWnd->PostMessage( pMsg->message, pMsg->wParam, pMsg->lParam );
 		return TRUE;
 	}
 

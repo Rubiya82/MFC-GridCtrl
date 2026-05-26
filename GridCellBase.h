@@ -56,16 +56,16 @@ class CGridCtrl;
 
 // Used for Get/SetItem calls.
 typedef struct _GV_ITEM {
-    int      row,col;     // Row and Column of item
-    UINT     mask;        // Mask for use in getting/setting cell data
-    UINT     nState;      // cell state (focus/hilighted etc)
-    DWORD    nFormat;     // Format of cell
-    int      iImage;      // index of the list view item’s icon
-    COLORREF crBkClr;     // Background colour (or CLR_DEFAULT)
-    COLORREF crFgClr;     // Forground colour (or CLR_DEFAULT)
-    LPARAM   lParam;      // 32-bit value to associate with item
-    LOGFONT  lfFont;      // Cell font
-    UINT     nMargin;     // Internal cell margin
+    int      row = -1, col = -1; // Row and Column of item
+    UINT     mask = 0;           // Mask for use in getting/setting cell data
+    UINT     nState = 0;         // cell state (focus/hilighted etc)
+    DWORD    nFormat = 0;        // Format of cell
+    int      iImage = -1;        // index of the list view item's icon
+    COLORREF crBkClr = CLR_DEFAULT; // Background colour (or CLR_DEFAULT)
+    COLORREF crFgClr = CLR_DEFAULT; // Forground colour (or CLR_DEFAULT)
+    LPARAM   lParam = 0;         // 32-bit value to associate with item
+    LOGFONT  lfFont{};           // Cell font
+    UINT     nMargin = 0;        // Internal cell margin
     CString  strText;     // Text in cell
 } GV_ITEM;
 

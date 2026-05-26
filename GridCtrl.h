@@ -98,20 +98,20 @@
 
 // This structure sent to Grid's parent in a WM_NOTIFY message
 typedef struct tagNM_GRIDVIEW {
-    NMHDR hdr;
-    int   iRow;
-    int   iColumn;
+    NMHDR hdr{};
+    int   iRow = -1;
+    int   iColumn = -1;
 } NM_GRIDVIEW;
 
 // This is sent to the Grid from child in-place edit controls
 typedef struct tagGV_DISPINFO {
-    NMHDR   hdr;
+    NMHDR   hdr{};
     GV_ITEM item;
 } GV_DISPINFO;
 
 // This is sent to the Grid from child in-place edit controls
 typedef struct tagGV_CACHEHINT {
-    NMHDR      hdr;
+    NMHDR      hdr{};
     CCellRange range;
 } GV_CACHEHINT;
 
@@ -798,7 +798,7 @@ public:
 	int m_CurCol;
 	void AllowReorderColumn(bool b=true) { m_AllowReorderColumn = b;}
 	void EnableDragRowMode(bool b=true) { m_bDragRowMode = b; if(b) EnableDragAndDrop(); } // to change row order
-	int GetLayer(int** pLayer); //  gives back the number of ints of the area (do not forget to delete *pLayer)
+	int GetLayer(int** pLayer); //  gives back the number of ints of the area (do not forget to delete[] *pLayer)
 	void SetLayer(int* pLayer); // coming from a previous GetLayer (ignored if not same number of column, or the same revision number)
 	void ForceQuitFocusOnTab(bool b=true) { m_QuitFocusOnTab = b;} // use only if GetParent() is a CDialog
 	void AllowSelectRowInFixedCol(bool b=true) { m_AllowSelectRowInFixedCol = b;} // 

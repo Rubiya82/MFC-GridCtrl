@@ -128,8 +128,6 @@ namespace gridctrl {
 #include <afxadv.h>            // For CSharedFile
 #include <afxconv.h>           // For LPTSTR -> LPSTR macros
 
-#pragma warning(disable:4996)
-
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #undef THIS_FILE
@@ -158,34 +156,10 @@ IMPLEMENT_DYNCREATE(CGridCtrl, CWnd)
 // Why doesn't windows give us this function???
 UINT GetMouseScrollLines()
 {
-    int nScrollLines = 3;            // reasonable default
+    UINT nScrollLines = 3;            // reasonable default
 
 #ifndef _WIN32_WCE
-    // Do things the hard way in win95
-    OSVERSIONINFO VersionInfo;
-    VersionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-    if (!GetVersionEx(&VersionInfo) || 
-        (VersionInfo.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS && VersionInfo.dwMinorVersion == 0))
-    {
-        HKEY hKey;
-        if (RegOpenKeyEx(HKEY_CURRENT_USER,  _T("Control Panel\\Desktop"),
-            0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS)
-        {
-            TCHAR szData[128];
-            DWORD dwKeyDataType;
-            DWORD dwDataBufSize = sizeof(szData);
-            
-            if (RegQueryValueEx(hKey, _T("WheelScrollLines"), NULL, &dwKeyDataType,
-                (LPBYTE) &szData, &dwDataBufSize) == ERROR_SUCCESS)
-            {
-                nScrollLines = _tcstoul(szData, NULL, 10);
-            }
-            RegCloseKey(hKey);
-        }
-    }
-    // win98 or greater
-    else
-           SystemParametersInfo (SPI_GETWHEELSCROLLLINES, 0, &nScrollLines, 0);
+    SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, &nScrollLines, 0);
 #endif
 
     return nScrollLines;
@@ -529,20 +503,39 @@ LRESULT CGridCtrl::SendCacheHintToParent(const CCellRange& range) const
 
 #define LAYER_SIGNATURE (0x5FD4E64)
 int CGridCtrl::GetLayer(int** pLayer) // used to save and restore order of columns
-{ //  gives back the size of the area (do not forget to delete pLayer)
-	int Length = 2+GetColumnCount()*2;
-	int *Layer = new int[Length];	// the caller is supposed to delete it
-	Layer[0]= LAYER_SIGNATURE;
-	Layer[1]= GetColumnCount();
-	memcpy(&Layer[2], &m_arColOrder[0], GetColumnCount()*sizeof(int));
-	memcpy(&Layer[2+GetColumnCount()], &m_arColWidths[0], GetColumnCount()*sizeof(int));
+{ //  gives back the size of the area (do not forget to delete[] *pLayer)
+	if (!pLayer)
+		return 0;
+
+	const int nColumnCount = GetColumnCount();
+	if (nColumnCount < 0 || nColumnCount > (INT_MAX - 2) / 2)
+		return 0;
+	if (static_cast<size_t>(nColumnCount) > m_arColOrder.size() ||
+		static_cast<INT_PTR>(nColumnCount) > m_arColWidths.GetSize())
+		return 0;
+
+	const int Length = 2 + nColumnCount * 2;
+	intlist layerData(static_cast<size_t>(Length));
+	layerData[0]= LAYER_SIGNATURE;
+	layerData[1]= nColumnCount;
+	for (int i = 0; i < nColumnCount; ++i)
+	{
+		layerData[2 + i] = m_arColOrder[i];
+		layerData[2 + nColumnCount + i] = static_cast<int>(m_arColWidths[i]);
+	}
+	int *Layer = new int[layerData.size()];	// the caller is supposed to delete[] it
+	std::copy(layerData.begin(), layerData.end(), Layer);
 	*pLayer = Layer;
 	return Length;
 }
 void CGridCtrl::SetLayer(int* pLayer)
 { // coming from a previous GetLayer (ignored if not same number of column, or the same revision number)
+	if (!pLayer) return;
 	if(pLayer[0] != LAYER_SIGNATURE) return;
 	if(pLayer[1] != GetColumnCount()) return;
+	if (static_cast<size_t>(pLayer[1]) > m_arColOrder.size() ||
+		static_cast<INT_PTR>(pLayer[1]) > m_arColWidths.GetSize())
+		return;
 /*	TRACE("  %d == %d \n",m_arColOrder[0],pLayer[2]);
 	TRACE("  %d == %d \n",m_arColOrder[1],pLayer[3]);
 	TRACE("  %d == %d \n",m_arColOrder[2],pLayer[4]);
@@ -559,8 +552,13 @@ void CGridCtrl::SetLayer(int* pLayer)
 	ASSERT(m_arColWidths[1]==pLayer[3+3]);
 	ASSERT(m_arColWidths[2]==pLayer[4+3]);
 	ASSERT(GetColumnCount()==3);
-*/	memcpy(&m_arColOrder[0],&pLayer[2], GetColumnCount()*sizeof(int));
-	memcpy(&m_arColWidths[0],&pLayer[2+GetColumnCount()], GetColumnCount()*sizeof(int));
+*/
+	const int nColumnCount = GetColumnCount();
+	for (int i = 0; i < nColumnCount; ++i)
+	{
+		m_arColOrder[i] = pLayer[2 + i];
+		m_arColWidths[i] = static_cast<UINT>(pLayer[2 + nColumnCount + i]);
+	}
 }
 
 BEGIN_MESSAGE_MAP(CGridCtrl, CWnd)
@@ -1592,6 +1590,7 @@ void CGridCtrl::OnVScroll(UINT nSBCode, UINT /*nPos*/, CScrollBar* /*pScrollBar*
             SetScrollPos32(SB_VERT, m_nVScrollMax);
             Invalidate();
         }
+        break;
         
     default: 
         break;
@@ -2397,8 +2396,8 @@ COleDataSource* CGridCtrl::CopyTextFromGrid()
         if (row != Selection.GetMaxRow()) 
             str += _T("\r\n");
         
-        sf.Write(T2A(str.GetBuffer(1)), str.GetLength());
-        str.ReleaseBuffer();
+        CT2A strAnsi(str);
+        sf.Write(static_cast<LPCSTR>(strAnsi), static_cast<UINT>(lstrlenA(strAnsi)));
     }
     
     char c = '\0';
@@ -2432,21 +2431,20 @@ BOOL CGridCtrl::PasteTextToGrid(CCellID cell, COleDataObject* pDataObject,
 
     // Get the text from the COleDataObject
     HGLOBAL hmem = pDataObject->GetGlobalData(CF_TEXT);
-    CMemFile sf((BYTE*) ::GlobalLock(hmem), (UINT)::GlobalSize(hmem));
-
-    // CF_TEXT is ANSI text, so we need to allocate a char* buffer
-    // to hold this.
-    LPSTR szBuffer = new char[::GlobalSize(hmem)]; // FIX: Use LPSTR char here
-    if (!szBuffer)
+    if (!hmem)
         return FALSE;
 
-    sf.Read(szBuffer, (UINT)::GlobalSize(hmem));
-    ::GlobalUnlock(hmem);
+    const SIZE_T cbData = ::GlobalSize(hmem);
+    if (cbData == 0 || cbData > static_cast<SIZE_T>(INT_MAX))
+        return FALSE;
 
-    // Now store in generic TCHAR form so we no longer have to deal with
-    // ANSI/UNICODE problems
-    CString strText(szBuffer);
-    delete szBuffer;
+    LPCSTR pszClipboardText = static_cast<LPCSTR>(::GlobalLock(hmem));
+    if (!pszClipboardText)
+        return FALSE;
+
+    CStringA strClipboardText(pszClipboardText, static_cast<int>(cbData));
+    CString strText(strClipboardText);
+    ::GlobalUnlock(hmem);
 
     // Parse text data and set in cells...
     strText.LockBuffer();
@@ -2462,7 +2460,9 @@ BOOL CGridCtrl::PasteTextToGrid(CCellID cell, COleDataObject* pDataObject,
         nIndex = strLine.Find(_T("\n"));
 
         // Store the remaining chars after the newline
-        CString strNext = (nIndex < 0)? _T("")  : strLine.Mid(nIndex + 1);
+        CString strNext;
+        if (nIndex >= 0)
+            strNext = strLine.Mid(nIndex + 1);
 
         // Remove all chars after the newline
         if (nIndex >= 0)
@@ -2509,7 +2509,10 @@ BOOL CGridCtrl::PasteTextToGrid(CCellID cell, COleDataObject* pDataObject,
 				if (iColVis > PasteRange.GetMaxCol()) PasteRange.SetMaxCol(iColVis);
             }
 
-            strLine = (nLineIndex >= 0)? strLine.Mid(nLineIndex + 1) : _T("");
+            if (nLineIndex >= 0)
+                strLine = strLine.Mid(nLineIndex + 1);
+            else
+                strLine.Empty();
             nLineIndex = strLine.FindOneOf(_T("\t,"));
             strCellText = (nLineIndex >= 0)? strLine.Left(nLineIndex) : strLine;
 
@@ -4655,7 +4658,11 @@ BOOL CGridCtrl::SetItemTextFmtID(int nRow, int nCol, UINT nID, ...)
 
     // Format the message text
     va_start(argptr, nID);
-    VERIFY(strFmt.LoadString(nID));
+    if (!strFmt.LoadString(nID))
+    {
+        va_end(argptr);
+        return FALSE;
+    }
     strText.FormatV(strFmt, argptr);
     va_end(argptr);
 
@@ -6429,7 +6436,8 @@ void CGridCtrl::OnLButtonUp(UINT nFlags, CPoint point)
     ClipCursor(NULL);
 #endif
 
-    if (GetCapture()->GetSafeHwnd() == GetSafeHwnd())
+    CWnd* pCaptureWnd = GetCapture();
+    if (pCaptureWnd && pCaptureWnd->GetSafeHwnd() == GetSafeHwnd())
     {
         ReleaseCapture();
         KillTimer(m_nTimerID);
@@ -6637,7 +6645,8 @@ void CGridCtrl::Print(CPrintDialog* pPrntDialog /*=NULL*/)
     dc.m_bPrinting = TRUE;
 
     CString strTitle;
-    strTitle.LoadString(AFX_IDS_APP_TITLE);
+    if (!strTitle.LoadString(AFX_IDS_APP_TITLE))
+        strTitle.Empty();
 
     if( strTitle.IsEmpty() )
     {
@@ -7145,7 +7154,8 @@ void CGridCtrl::PrintHeader(CDC *pDC, CPrintInfo *pInfo)
 {
     // print App title on top right margin
     CString strRight;
-    strRight.LoadString(AFX_IDS_APP_TITLE);
+    if (!strRight.LoadString(AFX_IDS_APP_TITLE))
+        strRight.Empty();
 
     // print parent window title in the centre (Gert Rijs)
     CString strCenter;
@@ -7261,7 +7271,10 @@ BOOL CGridCtrl::Save(LPCTSTR filename, TCHAR chSeparator/*=_T(',')*/)
             for (int j = 0; j < nNumColumns; j++)
             {
                 File.WriteString(GetItemText(i,j));
-                File.WriteString((j==(nNumColumns-1))? _T("\n"): strSeparator);
+                if (j == nNumColumns - 1)
+                    File.WriteString(_T("\n"));
+                else
+                    File.WriteString(strSeparator);
             }
         }
 

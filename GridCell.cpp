@@ -35,8 +35,6 @@
 #include "InPlaceEdit.h"
 #include "GridCtrl.h"
 
-#pragma warning(disable:4996)
-
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #undef THIS_FILE
@@ -231,20 +229,7 @@ CGridDefaultCell::CGridDefaultCell()
 #if defined(_MSC_VER) && (_MSC_VER < 1300)
     ncm.cbSize = sizeof(NONCLIENTMETRICS); // NONCLIENTMETRICS has an extra element after VC6
 #else
-    // Check the operating system's version
-    OSVERSIONINFOEX osvi;
-    ZeroMemory(&osvi, sizeof(OSVERSIONINFOEX));
-    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-    if( !GetVersionEx((OSVERSIONINFO *) &osvi))
-    {
-    	osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);	
-        GetVersionEx ((OSVERSIONINFO *)&osvi);
-    }
-    
-    if (osvi.dwMajorVersion > 5)
-    	ncm.cbSize = sizeof(NONCLIENTMETRICS);
-    else
-	    ncm.cbSize = sizeof(NONCLIENTMETRICS) - sizeof(ncm.iPaddedBorderWidth);
+    ncm.cbSize = sizeof(NONCLIENTMETRICS);
 #endif
     VERIFY(SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0));
 
