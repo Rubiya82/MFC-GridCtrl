@@ -126,7 +126,6 @@ namespace gridctrl {
 
 // OLE stuff for clipboard operations
 #include <afxadv.h>            // For CSharedFile
-#include <afxconv.h>           // For LPTSTR -> LPSTR macros
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -2335,6 +2334,25 @@ void CGridCtrl::ClearCells(CCellRange Selection)
 ////////////////////////////////////////////////////////////////////////////////////////
 // Clipboard functions
 
+static CLIPFORMAT GridClipboardTextFormat()
+{
+#ifdef _UNICODE
+    return CF_UNICODETEXT;
+#else
+    return CF_TEXT;
+#endif
+}
+
+static BOOL GridHasClipboardText(COleDataObject* pDataObject)
+{
+    return pDataObject && pDataObject->IsDataAvailable(GridClipboardTextFormat());
+}
+
+static BOOL GridCanPasteText()
+{
+    return ::IsClipboardFormatAvailable(GridClipboardTextFormat());
+}
+
 // Deletes the contents from the selected cells
 void CGridCtrl::CutSelectedText()
 {
@@ -2353,8 +2371,6 @@ void CGridCtrl::CutSelectedText()
 // Copies text from the selected cells to the clipboard
 COleDataSource* CGridCtrl::CopyTextFromGrid()
 {
-    USES_CONVERSION;
-
     CCellRange Selection = GetSelectedCellRange();
     if (!IsValid(Selection))
         return NULL;
@@ -2362,7 +2378,7 @@ COleDataSource* CGridCtrl::CopyTextFromGrid()
     if (GetVirtualMode())
         SendCacheHintToParent(Selection);
 
-    // Write to shared file (REMEBER: CF_TEXT is ANSI, not UNICODE, so we need to convert)
+    // Write to shared memory using the project's active TCHAR encoding.
     CSharedFile sf(GMEM_MOVEABLE | GMEM_DDESHARE | GMEM_ZEROINIT);
 
     // Get a tab delimited string to copy to cache
@@ -2396,12 +2412,11 @@ COleDataSource* CGridCtrl::CopyTextFromGrid()
         if (row != Selection.GetMaxRow()) 
             str += _T("\r\n");
         
-        CT2A strAnsi(str);
-        sf.Write(static_cast<LPCSTR>(strAnsi), static_cast<UINT>(lstrlenA(strAnsi)));
+        sf.Write(static_cast<LPCTSTR>(str), static_cast<UINT>(str.GetLength() * sizeof(TCHAR)));
     }
     
-    char c = '\0';
-    sf.Write(&c, 1);
+    TCHAR c = _T('\0');
+    sf.Write(&c, sizeof(c));
 
     if (GetVirtualMode())
         SendCacheHintToParent(CCellRange(-1,-1,-1,-1));
@@ -2417,7 +2432,7 @@ COleDataSource* CGridCtrl::CopyTextFromGrid()
 
     // Cache data
     COleDataSource* pSource = new COleDataSource();
-    pSource->CacheGlobalData(CF_TEXT, hMem);
+    pSource->CacheGlobalData(GridClipboardTextFormat(), hMem);
 
     return pSource;
 }
@@ -2426,24 +2441,23 @@ COleDataSource* CGridCtrl::CopyTextFromGrid()
 BOOL CGridCtrl::PasteTextToGrid(CCellID cell, COleDataObject* pDataObject, 
 								BOOL bSelectPastedCells /*=TRUE*/)
 {
-    if (!IsValid(cell) || !IsCellEditable(cell) || !pDataObject->IsDataAvailable(CF_TEXT))
+    if (!IsValid(cell) || !IsCellEditable(cell) || !GridHasClipboardText(pDataObject))
         return FALSE;
 
     // Get the text from the COleDataObject
-    HGLOBAL hmem = pDataObject->GetGlobalData(CF_TEXT);
+    HGLOBAL hmem = pDataObject->GetGlobalData(GridClipboardTextFormat());
     if (!hmem)
         return FALSE;
 
     const SIZE_T cbData = ::GlobalSize(hmem);
-    if (cbData == 0 || cbData > static_cast<SIZE_T>(INT_MAX))
+    if (cbData == 0 || cbData > static_cast<SIZE_T>(INT_MAX) * sizeof(TCHAR))
         return FALSE;
 
-    LPCSTR pszClipboardText = static_cast<LPCSTR>(::GlobalLock(hmem));
+    LPCTSTR pszClipboardText = static_cast<LPCTSTR>(::GlobalLock(hmem));
     if (!pszClipboardText)
         return FALSE;
 
-    CStringA strClipboardText(pszClipboardText, static_cast<int>(cbData));
-    CString strText(strClipboardText);
+    CString strText(pszClipboardText, static_cast<int>(cbData / sizeof(TCHAR)));
     ::GlobalUnlock(hmem);
 
     // Parse text data and set in cells...
@@ -2584,7 +2598,7 @@ DROPEFFECT CGridCtrl::OnDragOver(COleDataObject* pDataObject, DWORD dwKeyState,
 		}
 		else
 		{
-    if (!m_bAllowDragAndDrop || !IsEditable() || !pDataObject->IsDataAvailable(CF_TEXT))
+    if (!m_bAllowDragAndDrop || !IsEditable() || !GridHasClipboardText(pDataObject))
         return DROPEFFECT_NONE;
 			Valid = IsValid(cell)!=0;
 		}
@@ -2648,7 +2662,7 @@ DROPEFFECT CGridCtrl::OnDragEnter(COleDataObject* pDataObject, DWORD dwKeyState,
 	bool Valid;
 	if(m_CurCol==-1)
 	{
-    if (!m_bAllowDragAndDrop || !pDataObject->IsDataAvailable(CF_TEXT))
+    if (!m_bAllowDragAndDrop || !GridHasClipboardText(pDataObject))
         return DROPEFFECT_NONE;
 
     // Find which cell we are over and drop-highlight it
@@ -2828,7 +2842,7 @@ void CGridCtrl::OnUpdateEditPaste(CCmdUI* pCmdUI)
     CCellID cell = GetFocusCell();
 
     BOOL bCanPaste = IsValid(cell) && IsCellEditable(cell) &&
-        ::IsClipboardFormatAvailable(CF_TEXT);
+        GridCanPasteText();
 
     pCmdUI->Enable(bCanPaste);
 }
